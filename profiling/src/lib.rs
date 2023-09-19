@@ -17,6 +17,9 @@ mod exception;
 #[cfg(feature = "timeline")]
 mod timeline;
 
+#[cfg(feature = "io_profiling")]
+mod io;
+
 #[cfg(not(php_has_php_version_id_fn))]
 use bindings::zend_long;
 
@@ -935,6 +938,9 @@ extern "C" fn startup(extension: *mut ZendExtension) -> ZendResult {
 
     #[cfg(feature = "allocation_profiling")]
     allocation::allocation_profiling_startup();
+
+    #[cfg(feature = "io_profiling")]
+    io::io_profiling_startup();
 
     ZendResult::Success
 }
