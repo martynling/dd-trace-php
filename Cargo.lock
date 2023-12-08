@@ -699,6 +699,7 @@ dependencies = [
  "log",
  "once_cell",
  "ouroboros",
+ "paste",
  "perfcnt",
  "rand 0.8.5",
  "rand_distr",

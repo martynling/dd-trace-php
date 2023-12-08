@@ -22,11 +22,6 @@ static mut PREV_ZEND_COMPILE_STRING: Option<zend::VmZendCompileString> = None;
 /// The engine's original (or neighbouring extensions) `zend_compile_file()` function
 static mut PREV_ZEND_COMPILE_FILE: Option<zend::VmZendCompileFile> = None;
 
-static mut SLEEP_HANDLER: InternalFunctionHandler = None;
-static mut USLEEP_HANDLER: InternalFunctionHandler = None;
-static mut TIME_NANOSLEEP_HANDLER: InternalFunctionHandler = None;
-static mut TIME_SLEEP_UNTIL_HANDLER: InternalFunctionHandler = None;
-
 thread_local! {
     static IDLE_SINCE: RefCell<Instant> = RefCell::new(Instant::now());
 }
@@ -34,6 +29,7 @@ thread_local! {
 #[inline]
 fn try_sleeping_fn(
     func: unsafe extern "C" fn(execute_data: *mut zend_execute_data, return_value: *mut zval),
+    reason: &'static str,
     execute_data: *mut zend_execute_data,
     return_value: *mut zval,
 ) -> anyhow::Result<()> {
@@ -74,7 +70,7 @@ fn try_sleeping_fn(
                 Some(profiler) => profiler.collect_idle(
                     now.as_nanos() as i64,
                     duration.as_nanos() as i64,
-                    "sleeping",
+                    reason,
                     &locals,
                 ),
                 None => { /* Profiling is probably disabled, no worries */ }
@@ -83,60 +79,6 @@ fn try_sleeping_fn(
         }
         Ok(())
     })
-}
-
-fn sleeping_fn(
-    func: unsafe extern "C" fn(execute_data: *mut zend_execute_data, return_value: *mut zval),
-    execute_data: *mut zend_execute_data,
-    return_value: *mut zval,
-) {
-    if let Err(err) = try_sleeping_fn(func, execute_data, return_value) {
-        warn!("error creating profiling timeline sample for an internal function: {err:#}");
-    }
-}
-
-/// Wrapping the PHP `sleep()` function to take the time it is blocking the current thread
-#[no_mangle]
-unsafe extern "C" fn ddog_php_prof_sleep(
-    execute_data: *mut zend_execute_data,
-    return_value: *mut zval,
-) {
-    if let Some(func) = SLEEP_HANDLER {
-        sleeping_fn(func, execute_data, return_value)
-    }
-}
-
-/// Wrapping the PHP `usleep()` function to take the time it is blocking the current thread
-#[no_mangle]
-unsafe extern "C" fn ddog_php_prof_usleep(
-    execute_data: *mut zend_execute_data,
-    return_value: *mut zval,
-) {
-    if let Some(func) = USLEEP_HANDLER {
-        sleeping_fn(func, execute_data, return_value)
-    }
-}
-
-/// Wrapping the PHP `time_nanosleep()` function to take the time it is blocking the current thread
-#[no_mangle]
-unsafe extern "C" fn ddog_php_prof_time_nanosleep(
-    execute_data: *mut zend_execute_data,
-    return_value: *mut zval,
-) {
-    if let Some(func) = TIME_NANOSLEEP_HANDLER {
-        sleeping_fn(func, execute_data, return_value)
-    }
-}
-
-/// Wrapping the PHP `time_sleep_until()` function to take the time it is blocking the current thread
-#[no_mangle]
-unsafe extern "C" fn ddog_php_prof_time_sleep_until(
-    execute_data: *mut zend_execute_data,
-    return_value: *mut zval,
-) {
-    if let Some(func) = TIME_SLEEP_UNTIL_HANDLER {
-        sleeping_fn(func, execute_data, return_value)
-    }
 }
 
 /// This functions needs to be called in MINIT of the module
@@ -156,29 +98,55 @@ pub fn timeline_minit() {
     }
 }
 
+macro_rules! create_ddog_php_prof_function_and_handler {
+    ($base_name:ident, $reason:expr) => {
+        // Constructing the handler and function names
+        paste::item! {
+            static mut [<$base_name:upper _ORIG_HANDLER>]: InternalFunctionHandler = None;
+
+            #[no_mangle]
+            unsafe extern "C" fn [<ddog_php_prof_ $base_name _handler>](
+                execute_data: *mut zend_execute_data,
+                return_value: *mut zval,
+            ) {
+                if let Some(func) = unsafe { [<$base_name:upper _ORIG_HANDLER>] } {
+                    if let Err(err) = try_sleeping_fn(func, $reason, execute_data, return_value) {
+                        warn!("error creating profiling timeline sample for an internal function: {err:#}");
+                    }
+                }
+            }
+        }
+    };
+}
+
+create_ddog_php_prof_function_and_handler!(sleep, "sleeping");
+create_ddog_php_prof_function_and_handler!(usleep, "sleeping");
+create_ddog_php_prof_function_and_handler!(time_nanosleep, "sleeping");
+create_ddog_php_prof_function_and_handler!(time_sleep_until, "sleeping");
+
 /// This function is run during the STARTUP phase and hooks into the execution of some functions
 /// that we'd like to observe in regards of visualization on the timeline
 pub unsafe fn timeline_startup() {
     let handlers = [
         zend::datadog_php_zif_handler::new(
             CStr::from_bytes_with_nul_unchecked(b"sleep\0"),
-            &mut SLEEP_HANDLER,
-            Some(ddog_php_prof_sleep),
+            &mut SLEEP_ORIG_HANDLER,
+            Some(ddog_php_prof_sleep_handler),
         ),
         zend::datadog_php_zif_handler::new(
             CStr::from_bytes_with_nul_unchecked(b"usleep\0"),
-            &mut USLEEP_HANDLER,
-            Some(ddog_php_prof_usleep),
+            &mut USLEEP_ORIG_HANDLER,
+            Some(ddog_php_prof_usleep_handler),
         ),
         zend::datadog_php_zif_handler::new(
             CStr::from_bytes_with_nul_unchecked(b"time_nanosleep\0"),
-            &mut TIME_NANOSLEEP_HANDLER,
-            Some(ddog_php_prof_time_nanosleep),
+            &mut TIME_NANOSLEEP_ORIG_HANDLER,
+            Some(ddog_php_prof_time_nanosleep_handler),
         ),
         zend::datadog_php_zif_handler::new(
             CStr::from_bytes_with_nul_unchecked(b"time_sleep_until\0"),
-            &mut TIME_SLEEP_UNTIL_HANDLER,
-            Some(ddog_php_prof_time_sleep_until),
+            &mut TIME_SLEEP_UNTIL_ORIG_HANDLER,
+            Some(ddog_php_prof_time_sleep_until_handler),
         ),
     ];
 
