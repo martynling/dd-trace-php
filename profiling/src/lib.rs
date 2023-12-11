@@ -17,6 +17,8 @@ mod exception;
 #[cfg(feature = "timeline")]
 mod timeline;
 
+mod io;
+
 #[cfg(not(php_has_php_version_id_fn))]
 use bindings::zend_long;
 
@@ -960,7 +962,9 @@ extern "C" fn startup(extension: *mut ZendExtension) -> ZendResult {
     // Safety: calling this in zend_extension startup.
     unsafe {
         pcntl::startup();
+        #[cfg(feature = "timeline")]
         timeline::timeline_startup();
+        io::io_startup();
     }
 
     #[cfg(feature = "allocation_profiling")]

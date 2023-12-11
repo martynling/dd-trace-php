@@ -873,6 +873,54 @@ impl Profiler {
         }
     }
 
+    /// This function can be called to collect any kind of io wait that is happening
+    pub fn collect_io_wait(
+        &self,
+        execute_data: *mut zend_execute_data,
+        now: i64,
+        duration: i64,
+        reason: &'static str,
+        locals: &RequestLocals,
+    ) {
+        let result = collect_stack_sample(execute_data);
+        match result {
+            Ok(frames) => {
+                let depth = frames.len();
+                let mut labels = Profiler::message_labels();
+
+                labels.push(Label {
+                    key: "event",
+                    value: LabelValue::Str(reason.into()),
+                });
+
+                let n_labels = labels.len();
+
+                match self.send_sample(Profiler::prepare_sample_message(
+                    frames,
+                    SampleValues {
+                        timeline: duration,
+                        ..Default::default()
+                    },
+                    labels,
+                    locals,
+                    now,
+                )) {
+                    Ok(_) => {
+                        trace!("Sent event 'io-wait' with {n_labels} labels to profiler.")
+                    }
+                    Err(err) => {
+                        warn!(
+                            "Failed to send event 'io-wait' with {n_labels} labels to profiler: {err}"
+                        )
+                    }
+                }
+            }
+            Err(err) => {
+                warn!("Failed to collect stack sample: {err}")
+            }
+        }
+    }
+
     #[cfg(feature = "timeline")]
     /// This function can be called to collect any kind of inactivity that is happening
     pub fn collect_idle(
