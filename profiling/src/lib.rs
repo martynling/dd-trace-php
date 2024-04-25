@@ -172,6 +172,20 @@ pub extern "C" fn get_module() -> &'static mut zend::ModuleEntry {
     unsafe { &mut *ptr::addr_of_mut!(MODULE) }
 }
 
+unsafe extern "C" fn zend_mm_error_handler(
+    _type: i32,
+    file: *mut zend::ZendString,
+    line: u32,
+    message: *mut zend::ZendString,
+) {
+    trace!(
+        "ERROR({_type} :  {} : {line} : {})",
+        unsafe { zend::zai_str_from_zstr(file.as_mut()).into_string() },
+        unsafe { zend::zai_str_from_zstr(message.as_mut()).into_string() }
+    );
+    return;
+}
+
 /* Important note on the PHP lifecycle:
  * Based on how some SAPIs work and the documentation, one might expect that
  * MINIT is called once per process, but this is only sort-of true. Some SAPIs
@@ -186,6 +200,8 @@ pub extern "C" fn get_module() -> &'static mut zend::ModuleEntry {
  * Be careful out there!
  */
 extern "C" fn minit(_type: c_int, module_number: c_int) -> ZendResult {
+    unsafe { zend::zend_observer_error_register(Some(zend_mm_error_handler)) }
+
     /* When developing the extension, it's useful to see log messages that
      * occur before the user can configure the log level. However, if we
      * initialized the logger here unconditionally then they'd have no way to

@@ -24,6 +24,8 @@
 // provides `zai_exception_message()`)
 #include <exceptions/exceptions.h>
 
+#include <Zend/zend_observer.h>
+
 // Used to communicate strings from C -> Rust.
 #include <zai_string/string.h>
 
