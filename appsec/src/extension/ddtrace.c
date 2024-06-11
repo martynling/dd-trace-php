@@ -44,6 +44,11 @@ static bool (*nullable _ddtrace_user_req_add_listeners)(
 
 static zend_string *(*_ddtrace_ip_extraction_find)(zval *server);
 
+static void _test_ddtrace_metric_register_buffer(
+    zend_string *nonnull name, ddtrace_metric_type type, ddtrace_metric_ns ns);
+static bool _test_ddtrace_metric_add_point(
+    zend_string *nonnull name, double value, zend_string *nonnull tags);
+
 static void dd_trace_load_symbols(void)
 {
     bool testing = get_global_DD_APPSEC_TESTING();
@@ -128,6 +133,14 @@ void dd_trace_startup()
     if (get_global_DD_APPSEC_TESTING()) {
         _orig_ddtrace_shutdown = mod->request_shutdown_func;
         mod->request_shutdown_func = _ddtrace_rshutdown_testing;
+
+        if (ddtrace_metric_register_buffer == NULL) {
+            ddtrace_metric_register_buffer =
+                _test_ddtrace_metric_register_buffer;
+        }
+        if (ddtrace_metric_add_point == NULL) {
+            ddtrace_metric_add_point = _test_ddtrace_metric_add_point;
+        }
     }
 }
 
@@ -469,3 +482,22 @@ static const zend_function_entry functions[] = {
 // clang-format on
 
 static void _register_testing_objects() { dd_phpobj_reg_funcs(functions); }
+
+static void _test_ddtrace_metric_register_buffer(
+    zend_string *nonnull name, ddtrace_metric_type type, ddtrace_metric_ns ns)
+{
+    php_error_docref(NULL, E_NOTICE,
+        "Would call ddtrace_metric_register_buffer with name=%.*s "
+        "type=%d ns=%d",
+        (int)ZSTR_LEN(name), ZSTR_VAL(name), type, ns);
+}
+static bool _test_ddtrace_metric_add_point(
+    zend_string *nonnull name, double value, zend_string *nonnull tags)
+{
+    php_error_docref(NULL, E_NOTICE,
+        "Would call to ddtrace_metric_add_point with name=%.*s value=%f "
+        "tags=%.*s",
+        (int)ZSTR_LEN(name), ZSTR_VAL(name), value, (int)ZSTR_LEN(tags),
+        ZSTR_VAL(tags));
+    return true;
+}

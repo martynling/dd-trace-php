@@ -13,6 +13,7 @@ dependencies {
     implementation 'org.slf4j:jul-to-slf4j:1.7.36'
 
     implementation 'org.apache.groovy:groovy:4.0.16'
+    implementation 'org.apache.groovy:groovy-json:4.0.16'
     implementation 'com.google.guava:guava:32.1.3-jre'
     implementation 'org.msgpack:msgpack-core:0.9.6'
     implementation 'io.javalin:javalin:5.4.2'
@@ -253,7 +254,11 @@ def buildTracerTask = { String version, String variant ->
             needsAppsec: false,
             description: 'Build tracer for PHP',
             inputs: [
-                    dirs: ['../../../ext', '../../../zend_abstract_interface'],
+                    dirs: [
+                            '../../../ext',
+                            '../../../zend_abstract_interface',
+                            '../../../libdatadog',
+                    ],
             ],
             outputs: [
                     volume: 'php-tracer',
