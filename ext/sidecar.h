@@ -12,6 +12,12 @@ void ddtrace_sidecar_shutdown(void);
 void ddtrace_reset_sidecar_globals(void);
 void ddtrace_sidecar_submit_root_span_data(void);
 
+void ddtrace_sidecar_send_debugger_data(ddog_Vec_DebuggerPayload payloads);
+void ddtrace_sidecar_send_debugger_datum(ddog_DebuggerPayload *payload);
+
+void ddtrace_sidecar_rinit(void);
+void ddtrace_sidecar_rshutdown(void);
+
 void ddtrace_sidecar_dogstatsd_count(zend_string *metric, zend_long value, zval *tags);
 void ddtrace_sidecar_dogstatsd_distribution(zend_string *metric, double value, zval *tags);
 void ddtrace_sidecar_dogstatsd_gauge(zend_string *metric, double value, zval *tags);
