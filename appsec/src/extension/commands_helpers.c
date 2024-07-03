@@ -752,6 +752,7 @@ void _handle_telemetry_metric(const char *nonnull key_str, size_t key_len,
 
     HANDLE_METRIC("remote_config.first_pull", DDTRACE_METRIC_TYPE_GAUGE);
     HANDLE_METRIC("remote_config.first_pull", DDTRACE_METRIC_TYPE_GAUGE);
+    HANDLE_METRIC("remote_config.first_pull", DDTRACE_METRIC_TYPE_GAUGE);
     HANDLE_METRIC(
         "remote_config.requests_before_running", DDTRACE_METRIC_TYPE_COUNT);
     HANDLE_METRIC("remote_config.last_success", DDTRACE_METRIC_TYPE_GAUGE);

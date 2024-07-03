@@ -9,6 +9,8 @@
 #include "listeners/engine_listener.hpp"
 #include "listeners/listener.hpp"
 #include "metrics.hpp"
+#include <atomic>
+#include <chrono>
 
 namespace dds::remote_config {
 
@@ -16,10 +18,12 @@ static constexpr std::chrono::milliseconds default_max_interval = 5min;
 
 client_handler::client_handler(remote_config::client::ptr &&rc_client,
     std::shared_ptr<service_config> service_config,
+    std::shared_ptr<metrics::TelemetrySubmitter> msubmitter,
     const std::chrono::milliseconds &poll_interval)
     : service_config_(std::move(service_config)),
       rc_client_(std::move(rc_client)), poll_interval_(poll_interval),
-      interval_(poll_interval), max_interval(default_max_interval)
+      msubmitter_(std::move(msubmitter)), interval_(poll_interval),
+      max_interval(default_max_interval)
 {
     // It starts checking if rc is available
     rc_action_ = [this] { discover(); };
@@ -56,9 +60,8 @@ client_handler::ptr client_handler::from_settings(service_identifier &&id,
     }
 
     if (eng_settings.rules_file.empty()) {
-        listeners.emplace_back(
-            std::make_shared<remote_config::engine_listener>(engine_ptr,
-                std::move(msubmitter), eng_settings.rules_file_or_default()));
+        listeners.emplace_back(std::make_shared<remote_config::engine_listener>(
+            engine_ptr, msubmitter, eng_settings.rules_file_or_default()));
     }
 
     if (listeners.empty()) {
@@ -69,7 +72,7 @@ client_handler::ptr client_handler::from_settings(service_identifier &&id,
         remote_config::settings(rc_settings), std::move(listeners));
 
     return std::make_shared<client_handler>(std::move(rc_client),
-        std::move(service_config),
+        std::move(service_config), std::move(msubmitter),
         std::chrono::milliseconds{rc_settings.poll_interval});
 }
 
@@ -102,7 +105,29 @@ void client_handler::handle_error()
 void client_handler::poll()
 {
     try {
-        rc_client_->poll();
+        if (last_success_ != empty_time) {
+            auto now = std::chrono::steady_clock::now();
+            auto elapsed =
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now - last_success_);
+            msubmitter_->submit_metric("remote_config.last_success"sv,
+                static_cast<double>(elapsed.count()), {});
+        }
+
+        const bool result = rc_client_->poll();
+
+        auto now = std::chrono::steady_clock::now();
+        last_success_ = now;
+
+        auto creation_time = creation_time_.load(std::memory_order_acquire);
+        if (result && creation_time != empty_time) {
+            auto elapsed =
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now - creation_time);
+            msubmitter_->submit_metric("remote_config.first_pull"sv,
+                static_cast<double>(elapsed.count()), {});
+            creation_time_.store(empty_time, std::memory_order_release);
+        }
     } catch (dds::remote_config::network_exception & /** e */) {
         handle_error();
     }

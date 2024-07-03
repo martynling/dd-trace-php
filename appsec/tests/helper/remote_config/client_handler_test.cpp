@@ -17,9 +17,10 @@ class client_handler : public remote_config::client_handler {
 public:
     client_handler(remote_config::client::ptr &&rc_client,
         std::shared_ptr<service_config> service_config,
+        std::shared_ptr<metrics::TelemetrySubmitter> msubmitter,
         const std::chrono::milliseconds &poll_interval)
         : remote_config::client_handler(
-              std::move(rc_client), service_config, poll_interval)
+              std::move(rc_client), service_config, msubmitter, poll_interval)
     {}
     void set_max_interval(std::chrono::milliseconds new_interval)
     {
@@ -171,6 +172,7 @@ TEST_F(ClientHandlerTest, IfNoProductsAreRequiredRemoteClientIsNotGenerated)
 
 TEST_F(ClientHandlerTest, ValidateRCThread)
 {
+    auto msubmitter = std::make_shared<StrictMock<mock::tel_submitter>>();
     std::promise<bool> poll_call_promise;
     auto poll_call_future = poll_call_promise.get_future();
     std::promise<bool> available_call_promise;
@@ -184,8 +186,10 @@ TEST_F(ClientHandlerTest, ValidateRCThread)
         .Times(1)
         .WillOnce(DoAll(SignalCall(&poll_call_promise), Return(true)));
 
+    EXPECT_CALL(
+        *msubmitter, submit_metric("remote_config.first_pull"sv, _, ""));
     auto client_handler = remote_config::client_handler(
-        std::move(rc_client), service_config, 200ms);
+        std::move(rc_client), service_config, msubmitter, 200ms);
 
     client_handler.start();
 
@@ -196,6 +200,7 @@ TEST_F(ClientHandlerTest, ValidateRCThread)
 
 TEST_F(ClientHandlerTest, WhenRcNotAvailableItKeepsDiscovering)
 {
+    auto msubmitter = std::make_shared<mock::tel_submitter>();
     auto rc_client = std::make_unique<remote_config::mock::client>(
         dds::service_identifier(sid));
     EXPECT_CALL(*rc_client, is_remote_config_available)
@@ -204,8 +209,8 @@ TEST_F(ClientHandlerTest, WhenRcNotAvailableItKeepsDiscovering)
         .WillOnce(Return(false));
     EXPECT_CALL(*rc_client, poll).Times(0);
 
-    auto client_handler =
-        mock::client_handler(std::move(rc_client), service_config, 500ms);
+    auto client_handler = mock::client_handler(
+        std::move(rc_client), service_config, msubmitter, 500ms);
 
     client_handler.tick();
     client_handler.tick();
@@ -213,6 +218,7 @@ TEST_F(ClientHandlerTest, WhenRcNotAvailableItKeepsDiscovering)
 
 TEST_F(ClientHandlerTest, WhenPollFailsItGoesBackToDiscovering)
 {
+    auto msubmitter = std::make_shared<mock::tel_submitter>();
     auto rc_client = std::make_unique<remote_config::mock::client>(
         dds::service_identifier(sid));
     EXPECT_CALL(*rc_client, is_remote_config_available)
@@ -223,8 +229,8 @@ TEST_F(ClientHandlerTest, WhenPollFailsItGoesBackToDiscovering)
         .Times(1)
         .WillOnce(Throw(dds::remote_config::network_exception("some")));
 
-    auto client_handler =
-        mock::client_handler(std::move(rc_client), service_config, 500ms);
+    auto client_handler = mock::client_handler(
+        std::move(rc_client), service_config, msubmitter, 500ms);
     client_handler.tick();
     client_handler.tick();
     client_handler.tick();
@@ -232,6 +238,7 @@ TEST_F(ClientHandlerTest, WhenPollFailsItGoesBackToDiscovering)
 
 TEST_F(ClientHandlerTest, WhenDiscoverFailsItStaysOnDiscovering)
 {
+    auto msubmitter = std::make_shared<mock::tel_submitter>();
     auto rc_client = std::make_unique<remote_config::mock::client>(
         dds::service_identifier(sid));
     EXPECT_CALL(*rc_client, is_remote_config_available)
@@ -241,8 +248,8 @@ TEST_F(ClientHandlerTest, WhenDiscoverFailsItStaysOnDiscovering)
         .WillOnce(Throw(dds::remote_config::network_exception("some")));
     EXPECT_CALL(*rc_client, poll).Times(0);
 
-    auto client_handler =
-        mock::client_handler(std::move(rc_client), service_config, 50ms);
+    auto client_handler = mock::client_handler(
+        std::move(rc_client), service_config, msubmitter, 50ms);
     client_handler.set_max_interval(100ms);
     client_handler.tick();
     client_handler.tick();
@@ -251,6 +258,7 @@ TEST_F(ClientHandlerTest, WhenDiscoverFailsItStaysOnDiscovering)
 
 TEST_F(ClientHandlerTest, ItKeepsPollingWhileNoError)
 {
+    auto msubmitter = std::make_shared<StrictMock<mock::tel_submitter>>();
     auto rc_client = std::make_unique<remote_config::mock::client>(
         dds::service_identifier(sid));
     EXPECT_CALL(*rc_client, is_remote_config_available)
@@ -261,25 +269,31 @@ TEST_F(ClientHandlerTest, ItKeepsPollingWhileNoError)
         .WillOnce(Return(true))
         .WillOnce(Return(true));
 
-    auto client_handler =
-        mock::client_handler(std::move(rc_client), service_config, 500ms);
+    auto client_handler = mock::client_handler(
+        std::move(rc_client), service_config, msubmitter, 500ms);
 
+    EXPECT_CALL(
+        *msubmitter, submit_metric("remote_config.first_pull"sv, _, ""));
     client_handler.tick();
+    EXPECT_CALL(
+        *msubmitter, submit_metric("remote_config.last_success"sv, _, ""));
     client_handler.tick();
     client_handler.tick();
 }
 
 TEST_F(ClientHandlerTest, ItDoesNotStartIfNoRcClientGiven)
 {
+    auto msubmitter = std::make_shared<mock::tel_submitter>();
     auto rc_client = nullptr;
-    auto client_handler =
-        remote_config::client_handler(rc_client, service_config, 500ms);
+    auto client_handler = remote_config::client_handler(
+        rc_client, service_config, msubmitter, 500ms);
 
     EXPECT_FALSE(client_handler.start());
 }
 
 TEST_F(ClientHandlerTest, ItDoesNotGoOverMaxIfGivenInitialIntervalIsLower)
 {
+    auto msubmitter = std::make_shared<mock::tel_submitter>();
     auto rc_client = std::make_unique<remote_config::mock::client>(
         dds::service_identifier(sid));
     EXPECT_CALL(*rc_client, is_remote_config_available)
@@ -287,8 +301,8 @@ TEST_F(ClientHandlerTest, ItDoesNotGoOverMaxIfGivenInitialIntervalIsLower)
         .WillRepeatedly(Return(false));
 
     auto max_interval = 300ms;
-    auto client_handler =
-        mock::client_handler(std::move(rc_client), service_config, 299ms);
+    auto client_handler = mock::client_handler(
+        std::move(rc_client), service_config, msubmitter, 299ms);
     client_handler.set_max_interval(max_interval);
 
     client_handler.tick();
@@ -301,6 +315,7 @@ TEST_F(ClientHandlerTest, ItDoesNotGoOverMaxIfGivenInitialIntervalIsLower)
 
 TEST_F(ClientHandlerTest, IfInitialIntervalIsHigherThanMaxItBecomesNewMax)
 {
+    auto msubmitter = std::make_shared<mock::tel_submitter>();
     auto rc_client = std::make_unique<remote_config::mock::client>(
         dds::service_identifier(sid));
     EXPECT_CALL(*rc_client, is_remote_config_available)
@@ -308,8 +323,8 @@ TEST_F(ClientHandlerTest, IfInitialIntervalIsHigherThanMaxItBecomesNewMax)
         .WillRepeatedly(Return(false));
 
     auto interval = 200ms;
-    auto client_handler =
-        mock::client_handler(std::move(rc_client), service_config, interval);
+    auto client_handler = mock::client_handler(
+        std::move(rc_client), service_config, msubmitter, interval);
     client_handler.set_max_interval(100ms);
 
     client_handler.tick();
@@ -322,23 +337,25 @@ TEST_F(ClientHandlerTest, IfInitialIntervalIsHigherThanMaxItBecomesNewMax)
 
 TEST_F(ClientHandlerTest, ByDefaultMaxIntervalisFiveMinutes)
 {
+    auto msubmitter = std::make_shared<mock::tel_submitter>();
     auto rc_client = std::make_unique<remote_config::mock::client>(
         dds::service_identifier(sid));
-    auto client_handler =
-        mock::client_handler(std::move(rc_client), service_config, 200ms);
+    auto client_handler = mock::client_handler(
+        std::move(rc_client), service_config, msubmitter, 200ms);
 
     EXPECT_EQ(5min, client_handler.get_max_interval());
 }
 
 TEST_F(ClientHandlerTest, RegisterAndUnregisterRuntimeID)
 {
+    auto msubmitter = std::make_shared<mock::tel_submitter>();
     auto rc_client = std::make_unique<remote_config::mock::client>(
         dds::service_identifier(sid));
     EXPECT_CALL(*rc_client, register_runtime_id).Times(1);
     EXPECT_CALL(*rc_client, unregister_runtime_id).Times(1);
 
     auto client_handler = remote_config::client_handler(
-        std::move(rc_client), service_config, 200ms);
+        std::move(rc_client), service_config, msubmitter, 200ms);
 
     client_handler.register_runtime_id("something");
     client_handler.unregister_runtime_id("something");

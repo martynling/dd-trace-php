@@ -70,10 +70,22 @@ class Apache2FpmTests implements CommonTests {
         TelemetryHelpers.Metric wafInit
         TelemetryHelpers.Metric wafReq1
         TelemetryHelpers.Metric wafReq2
+        TelemetryHelpers.Metric rcFirstPull
+        TelemetryHelpers.Metric rcRequestsB4Running
+        TelemetryHelpers.Metric rcLastSuccess
 
         List<TelemetryHelpers.GenerateMetrics> messages = []
         def deadline = System.currentTimeSeconds() + 30
-        while ((!wafInit || !wafReq1 || !wafReq2) && System.currentTimeSeconds() < deadline) {
+        def lastHttpReq = System.currentTimeSeconds()
+        while ((!wafInit || !wafReq1 || !wafReq2 || !rcFirstPull || !rcLastSuccess) && System.currentTimeSeconds() < deadline) {
+            if (System.currentTimeSeconds() - lastHttpReq > 5) {
+                lastHttpReq = System.currentTimeSeconds()
+                // used to flush global (not request-bound) telemetry metrics
+                def request = container.buildReq('/hello.php').GET().build()
+                trace = container.traceFromRequest(req, ofString()) { HttpResponse<String> resp ->
+                    assert resp.body().size() > 0
+                }
+            }
             def telData = container.drainTelemetry(500)
             messages.addAll(
                     TelemetryHelpers.filterMessages(telData, TelemetryHelpers.GenerateMetrics))
@@ -81,6 +93,9 @@ class Apache2FpmTests implements CommonTests {
             wafInit = allSeries.find { it.name == 'waf.init' }
             wafReq1 = allSeries.find { it.name == 'waf.requests' && it.tags.size() == 2 }
             wafReq2 = allSeries.find { it.name == 'waf.requests' && it.tags.size() == 3 }
+            rcFirstPull = allSeries.find { it.name == 'remote_config.first_pull' }
+            rcRequestsB4Running = allSeries.find { it.name == 'remote_config.requests_before_running' }
+            rcLastSuccess = allSeries.find { it.name == 'remote_config.last_success' }
         }
 
         assert wafInit != null
@@ -100,6 +115,22 @@ class Apache2FpmTests implements CommonTests {
 
         assert wafReq2 != null
         assert wafReq2.tags.find { it == 'rule_triggered:true' }
+
+        assert rcFirstPull != null
+        assert rcFirstPull.namespace == 'appsec'
+        assert rcFirstPull.points[0][1] > 0
+        assert rcFirstPull.type == 'gauge'
+
+        assert rcRequestsB4Running != null
+        assert rcRequestsB4Running.namespace == 'appsec'
+        // the first request triggers helper/RC start so it will never be covered
+        assert rcRequestsB4Running.points[0][1] >= 1
+        assert rcRequestsB4Running.type == 'count'
+
+        assert rcLastSuccess != null
+        assert rcLastSuccess.namespace == 'appsec'
+        assert rcLastSuccess.points[0][1] > 0
+        assert rcLastSuccess.type == 'gauge'
     }
 
     @Test

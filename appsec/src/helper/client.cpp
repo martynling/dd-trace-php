@@ -239,6 +239,8 @@ std::shared_ptr<typename T::response> client::publish(
 
     auto response = std::make_shared<typename T::response>();
     try {
+        service_->before_first_publish();
+
         // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         auto res = context_->publish(std::move(command.data));
         if (res) {
@@ -502,19 +504,27 @@ struct RequestMetricsSubmitter : public metrics::TelemetrySubmitter {
     void submit_metric(
         std::string_view name, double value, std::string tags) override
     {
+        SPDLOG_TRACE("submit_metric [req]: name={}, value={}, tags={}", name,
+            value, tags);
         tel_metrics[name].emplace_back(value, tags);
     };
     void submit_legacy_metric(std::string_view name, double value) override
     {
+        SPDLOG_TRACE(
+            "submit_legacy_metric [req]: name={}, value={}", name, value);
         metrics[name] = value;
     };
     void submit_legacy_meta(std::string_view name, std::string value) override
     {
+        SPDLOG_TRACE(
+            "submit_legacy_meta [req]: name={}, value={}", name, value);
         meta[std::string{name}] = value;
     };
     void submit_legacy_meta_copy_key(
         std::string name, std::string value) override
     {
+        SPDLOG_TRACE("submit_legacy_meta_copy_key [req]: name={}, value={}",
+            name, value);
         meta[name] = value;
     }
 
@@ -528,15 +538,12 @@ template <typename Response>
 void collect_metrics_impl(Response &response, service &service,
     std::optional<engine::context> &context)
 {
-
     RequestMetricsSubmitter msubmitter{};
     if (context) {
         context->get_metrics(msubmitter);
     }
     service.drain_metrics(
         [&msubmitter](std::string_view name, double value, std::string tags) {
-            spdlog::debug(
-                "submit_metric: name={}, value={}, tags={}", name, value, tags);
             msubmitter.submit_metric(name, value, std::move(tags));
         });
     msubmitter.metrics.merge(service.drain_legacy_metrics());

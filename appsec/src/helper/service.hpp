@@ -14,6 +14,7 @@
 #include "service_identifier.hpp"
 #include "std_logging.hpp"
 #include "utils.hpp"
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <spdlog/spdlog.h>
@@ -47,18 +48,21 @@ protected:
         void submit_metric(std::string_view metric_name, double value,
             std::string tags) override
         {
+            SPDLOG_TRACE("submit_metric: {} {} {}", metric_name, value, tags);
             const std::lock_guard<std::mutex> lock{pending_metrics_mutex_};
             pending_metrics_.emplace_back(metric_name, value, std::move(tags));
         }
 
         void submit_legacy_metric(std::string_view name, double value) override
         {
+            SPDLOG_TRACE("submit_legacy_metric: {} {}", name, value);
             const std::lock_guard<std::mutex> lock{legacy_metrics_mutex_};
             legacy_metrics_[name] = value;
         }
         void submit_legacy_meta(
             std::string_view name, std::string value) override
         {
+            SPDLOG_TRACE("submit_legacy_meta: {} {}", name, value);
             const std::lock_guard<std::mutex> lock{meta_mutex_};
             meta_[std::string{name}] = std::move(value);
         }
@@ -182,6 +186,16 @@ public:
     [[nodiscard]] std::map<std::string, std::string> drain_legacy_meta()
     {
         return msubmitter_->drain_legacy_meta();
+    }
+
+    // to be called just before the submitting data to the engine for the first
+    // time in the request
+    void before_first_publish() const
+    {
+        if (client_handler_ && !client_handler_->has_applied_rc()) {
+            msubmitter_->submit_metric(
+                "remote_config.requests_before_running"sv, 1, "");
+        }
     }
 
 protected:

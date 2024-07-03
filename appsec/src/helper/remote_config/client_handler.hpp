@@ -13,6 +13,7 @@
 #include "service_identifier.hpp"
 #include "std_logging.hpp"
 #include "utils.hpp"
+#include <atomic>
 #include <future>
 #include <memory>
 #include <spdlog/spdlog.h>
@@ -28,6 +29,7 @@ public:
 
     client_handler(remote_config::client::ptr &&rc_client,
         std::shared_ptr<service_config> service_config,
+        std::shared_ptr<metrics::TelemetrySubmitter> msubmitter,
         const std::chrono::milliseconds &poll_interval = 1s);
     ~client_handler();
 
@@ -62,6 +64,11 @@ public:
         }
     }
 
+    bool has_applied_rc()
+    {
+        return creation_time_.load(std::memory_order_acquire) == empty_time;
+    }
+
 protected:
     void run(std::future<bool> &&exit_signal);
     void handle_error();
@@ -81,6 +88,13 @@ protected:
 
     std::promise<bool> exit_;
     std::thread handler_;
+
+    static constexpr auto empty_time = std::chrono::steady_clock::time_point{};
+
+    std::shared_ptr<metrics::TelemetrySubmitter> msubmitter_;
+    std::atomic<std::chrono::steady_clock::time_point> creation_time_{
+        std::chrono::steady_clock::now()}; // def value if first poll() done
+    std::chrono::steady_clock::time_point last_success_{};
 };
 
 } // namespace dds::remote_config
