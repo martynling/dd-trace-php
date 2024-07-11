@@ -364,4 +364,17 @@ trait SnapshotTestTrait
             $fieldsToIgnoreLogs
         );
     }
+
+    public function snapshotFromTraces(
+        $traces,
+        $fieldsToIgnore = ['metrics.php.compilation.total_time_ms', 'meta.error.stack', 'meta._dd.p.tid'],
+        $tokenSubstitute = null
+    ) {
+        $token = $tokenSubstitute ?: $this->generateToken();
+        $this->startSnapshotSession($token);
+
+        $this->sendTracesToTestAgent($traces);
+
+        $this->stopAndCompareSnapshotSession($token, $fieldsToIgnore, \count($traces));
+    }
 }
