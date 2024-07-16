@@ -371,6 +371,7 @@ trait SnapshotTestTrait
         $tokenSubstitute = null
     ) {
         $token = $tokenSubstitute ?: $this->generateToken();
+        echo "Snapshotting with token: $token\n";
         $this->startSnapshotSession($token);
 
         $this->sendTracesToTestAgent($traces);
