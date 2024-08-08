@@ -18,12 +18,20 @@ use DDTrace\Util\Versions;
  */
 abstract class BaseTestCase extends MultiPHPUnitVersionAdapter
 {
+    public static $activeResourceLock;
+
     public static function ddSetUpBeforeClass()
     {
+        if (isset(static::$lockedResource)) {
+            $lock = fopen("/tmp/ddtrace-phpunit/lock-" . static::$lockedResource, "c+");
+            flock($lock, LOCK_EX);
+            self::$activeResourceLock = $lock;
+        }
     }
 
     public static function ddTearDownAfterClass()
     {
+        self::$activeResourceLock = null;
     }
 
     protected function ddSetUp()
