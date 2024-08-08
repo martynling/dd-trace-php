@@ -29,19 +29,28 @@ std::string execute_request(const std::string &host, const std::string &port,
         // The io_context is required for all I/O
         net::io_context ioc;
 
+        beast::error_code ec;
+
         // These objects perform our I/O
         tcp::resolver resolver(ioc);
         beast::tcp_stream stream(ioc);
 
         // Look up the domain name
-        auto const results = resolver.resolve(host, port);
+        auto const results = resolver.resolve(host, port, ec);
+        SPDLOG_ERROR("Resolve result {}", ec.message());
+
+        for (const auto& entry: results) {
+            SPDLOG_ERROR("Resolution results {}:{}", entry.endpoint().address().to_string(), entry.endpoint().port());
+        }
 
         // Make the connection on the IP address we get from a lookup
-        stream.connect(results);
+        stream.connect(results, ec);
+        SPDLOG_ERROR("Connection result {}", ec.message());
 
         // Send the HTTP request to the remote host
-        http::write(stream, request);
-
+        http::write(stream, request, ec);
+        SPDLOG_ERROR("Write result {}", ec.message());
+        
         // This buffer is used for reading and must be persisted
         beast::flat_buffer buffer;
 
@@ -49,15 +58,16 @@ std::string execute_request(const std::string &host, const std::string &port,
         http::response<http::dynamic_body> res;
 
         // Receive the HTTP response
-        http::read(stream, buffer, res);
+        http::read(stream, buffer, res, ec);
+        SPDLOG_ERROR("Read result {}", ec.message());
 
         // Write the message to standard out
         result = boost::beast::buffers_to_string(res.body().data());
 
         // Gracefully close the socket
-        beast::error_code ec;
         // NOLINTNEXTLINE(bugprone-unused-return-value,cert-err33-c)
         stream.socket().shutdown(tcp::socket::shutdown_both, ec);
+        SPDLOG_ERROR("Shutdown result {}", ec.message());
 
         // not_connected happens sometimes
         // so don't bother reporting it.
