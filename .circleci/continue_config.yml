@@ -3727,6 +3727,9 @@ jobs:
           command: |
             git config --global --add safe.directory $(pwd)/appsec/third_party/libddwaf
             mkdir -p appsec/build ; cd appsec/build
+            patch /sysroot/glibc_compat.c < ../cmake/glibc_compat.patch
+            clang --sysroot /sysroot/$(arch)-none-linux-musl/ -fpie -O2 -fno-omit-frame-pointer -ggdb3 -c /sysroot/glibc_compat.c -o /tmp/glibc_compat.o
+            ar rcs /sysroot/$(arch)-none-linux-musl/usr/lib/libglibc_compat.a /tmp/glibc_compat.o
             cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DDD_APPSEC_BUILD_EXTENSION=OFF \
               -DDD_APPSEC_ENABLE_PATCHELF_LIBC=ON \
               -DCMAKE_TOOLCHAIN_FILE=/sysroot/$(arch)-none-linux-musl/Toolchain.cmake
