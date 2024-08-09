@@ -1,4 +1,4 @@
-134a135,182
+134a135,181
 > struct pthread_cond;
 > struct pthread_condattr;
 > typedef struct pthread_cond pthread_cond_t;
@@ -31,8 +31,9 @@
 >                     dlerror());
 >                 abort();
 >             }
->         }
 > #    endif
+>         }
+> 
 >         real_pthread_cond_init = dlsym(handle, "pthread_cond_init");
 >         if (!real_pthread_cond_init) {
 >             (void)fprintf(
@@ -44,6 +45,4 @@
 > 
 >     return real_pthread_cond_init(cond, cond_attr);
 > }
-> 
-> 
 > 
