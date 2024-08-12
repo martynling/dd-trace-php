@@ -1103,6 +1103,10 @@ function check_php_ext_prerequisite_or_exit($binary, $extName)
 {
     $extensions = shell_exec("$binary -m");
 
+    echo "Binary: $binary\n";
+    echo "Extensions:\n$extensions\n";
+    echo "Extension required: $extName";
+
     if (!in_array($extName, array_map("trim", explode("\n", $extensions)))) {
         print_error_and_exit("Required PHP extension '$extName' not found.\n");
     }
